@@ -9,7 +9,7 @@ export const healthMonitoringJob = createCronJob("healthMonitoring", EVERY_5_SEC
     (integration, itemOptions: Record<string, never>) => {
       const { kind } = integration;
 
-      if (kind !== "proxmox" && kind !== "mock") {
+      if (kind !== "proxmox" && kind !== "unraid" && kind !== "mock") {
         return systemInfoRequestHandler.handler({ ...integration, kind }, itemOptions);
       }
       return clusterInfoRequestHandler.handler({ ...integration, kind }, itemOptions);

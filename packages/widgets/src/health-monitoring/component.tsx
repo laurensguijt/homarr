@@ -10,12 +10,13 @@ import { useI18n } from "@homarr/translation/client";
 
 import type { WidgetComponentProps } from "../definition";
 import { ClusterHealthMonitoring } from "./cluster/cluster-health";
+import { UnraidHealthMonitoring } from "./cluster/unraid-health";
 import { SystemHealthMonitoring } from "./system-health";
 
 dayjs.extend(duration);
 
 const isClusterIntegration = (integration: { kind: IntegrationKind }) =>
-  integration.kind === "proxmox" || integration.kind === "mock";
+  integration.kind === "proxmox" || integration.kind === "unraid" || integration.kind === "mock";
 
 export default function HealthMonitoringWidget(props: WidgetComponentProps<"healthMonitoring">) {
   const [integrations] = clientApi.integration.byIds.useSuspenseQuery(props.integrationIds);
@@ -27,9 +28,15 @@ export default function HealthMonitoringWidget(props: WidgetComponentProps<"heal
     return <SystemHealthMonitoring {...props} />;
   }
 
+  // Check if this is an Unraid integration - use custom layout for single server
+  const unraidIntegration = integrations.find((integration) => integration.kind === "unraid" && integration.id === clusterIntegrationId);
+  if (unraidIntegration) {
+    return <UnraidHealthMonitoring {...props} integrationId={clusterIntegrationId} />;
+  }
+
   const otherIntegrationIds = integrations
     // We want to have the mock integration also in the system tab, so we use it for both
-    .filter((integration) => integration.kind !== "proxmox")
+    .filter((integration) => integration.kind !== "proxmox" && integration.kind !== "unraid")
     .map((integration) => integration.id);
   if (otherIntegrationIds.length === 0) {
     return <ClusterHealthMonitoring {...props} integrationId={clusterIntegrationId} />;

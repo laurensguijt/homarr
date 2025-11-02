@@ -93,20 +93,35 @@ const RightSection = ({ label, value }: RightSectionProps) => {
 
 const ComputeResourceDetails = ({ item }: { item: ComputeResource }) => {
   const t = useScopedI18n("widget.healthMonitoring.cluster.popover.detail");
+  
+  // Check if CPU/Memory metrics are available (not zero)
+  // This conditionally hides metrics when not available (e.g., Unraid VMs/LXCs)
+  // Works for all integrations - Proxmox always has metrics so they remain visible
+  const hasCpuMetrics = item.cpu.utilization > 0 || item.cpu.cores > 0;
+  const hasMemoryMetrics = item.memory.total > 0 && item.memory.used > 0;
+  
   return (
     <List>
-      <List.Item icon={<IconCpu size={16} />}>
-        {t("cpu")} - {item.cpu.cores}
-      </List.Item>
-      <List.Item icon={<IconBrain size={16} />}>
-        {t("memory")} - {humanFileSize(item.memory.used)} / {humanFileSize(item.memory.total)}
-      </List.Item>
-      <List.Item icon={<IconDatabase size={16} />}>
-        {t("storage")} - {humanFileSize(item.storage.used)} / {humanFileSize(item.storage.total)}
-      </List.Item>
-      <List.Item icon={<IconClockHour3 size={16} />}>
-        {t("uptime")} - {dayjs(dayjs().add(-item.uptime, "seconds")).fromNow(true)}
-      </List.Item>
+      {hasCpuMetrics && (
+        <List.Item icon={<IconCpu size={16} />}>
+          {t("cpu")} - {item.cpu.cores} {item.cpu.utilization > 0 && `(${(item.cpu.utilization * 100).toFixed(1)}%)`}
+        </List.Item>
+      )}
+      {hasMemoryMetrics && (
+        <List.Item icon={<IconBrain size={16} />}>
+          {t("memory")} - {humanFileSize(item.memory.used)} / {humanFileSize(item.memory.total)}
+        </List.Item>
+      )}
+      {(item.storage.used > 0 || item.storage.total > 0) && (
+        <List.Item icon={<IconDatabase size={16} />}>
+          {t("storage")} - {humanFileSize(item.storage.used)} / {humanFileSize(item.storage.total)}
+        </List.Item>
+      )}
+      {item.uptime > 0 && (
+        <List.Item icon={<IconClockHour3 size={16} />}>
+          {t("uptime")} - {dayjs(dayjs().add(-item.uptime, "seconds")).fromNow(true)}
+        </List.Item>
+      )}
       {item.haState && (
         <List.Item icon={<IconHeartBolt size={16} />}>
           {t("haState")} - {capitalize(item.haState)}
@@ -121,8 +136,14 @@ const ComputeResourceDetails = ({ item }: { item: ComputeResource }) => {
 const StorageResourceDetails = ({ item }: { item: StorageResource }) => {
   const t = useScopedI18n("widget.healthMonitoring.cluster.popover.detail");
   const storagePercent = item.total ? (item.used / item.total) * 100 : 0;
+  
+  // Extract type from status if available (format: "PARITY - DISK_OK" or "DATA - DISK_OK")
+  const statusParts = item.status.split(" - ");
+  const diskType = statusParts.length > 1 ? statusParts[0] : null;
+  const diskStatus = statusParts.length > 1 ? statusParts[1] : item.status;
+  
   return (
-    <Stack gap={0}>
+    <Stack gap="xs">
       <Center>
         <RingProgress
           roundCaps
@@ -131,12 +152,22 @@ const StorageResourceDetails = ({ item }: { item: StorageResource }) => {
           label={<Text ta="center">{storagePercent.toFixed(1)}%</Text>}
           sections={[{ value: storagePercent, color: storagePercent > 75 ? "orange" : "green" }]}
         />
-        <Group align="center" gap={0}>
-          <Text>
+        <Group align="center" gap={0} mt="xs">
+          <Text size="sm" ta="center">
             {t("storage")} - {humanFileSize(item.used)} / {humanFileSize(item.total)}
           </Text>
         </Group>
       </Center>
+      {diskType && (
+        <List>
+          <List.Item icon={<IconDatabase size={16} />}>
+            {t("type")} - {capitalize(diskType.toLowerCase())}
+          </List.Item>
+          <List.Item>
+            {t("status")} - {capitalize(diskStatus.toLowerCase().replace(/_/g, " "))}
+          </List.Item>
+        </List>
+      )}
       <Flex gap="sm" mt={0} justify="end">
         <StorageType item={item} />
       </Flex>

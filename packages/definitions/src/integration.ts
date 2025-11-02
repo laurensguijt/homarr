@@ -192,6 +192,13 @@ export const integrationDefs = {
     category: ["healthMonitoring"],
     documentationUrl: createDocumentationLink("/docs/integrations/proxmox"),
   },
+  unraid: {
+    name: "Unraid",
+    secretKinds: [["apiKey"]],
+    iconUrl: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@master/png/unraid.png",
+    category: ["healthMonitoring"],
+    documentationUrl: createDocumentationLink("/docs/integrations/unraid"),
+  },
   nextcloud: {
     name: "Nextcloud",
     secretKinds: [["username", "password"]],

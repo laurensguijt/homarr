@@ -13,6 +13,17 @@ interface ResourceTableProps {
 
 export const ResourceTable = ({ type, data, isTiny }: ResourceTableProps) => {
   const t = useI18n();
+  
+  // Check if CPU/Memory metrics are available
+  // Hide these columns if all items have zero cores AND zero utilization (e.g., Unraid VMs/LXCs)
+  // This is a generic improvement that works for all integrations - Proxmox always has metrics so columns remain visible
+  const hasCpuMetrics = type === "storage" 
+    ? false 
+    : data.length > 0 && data.some((item) => item.cpu.cores > 0 || item.cpu.utilization > 0);
+  const hasMemoryMetrics = type === "storage"
+    ? false
+    : data.length > 0 && data.some((item) => item.memory.total > 0);
+
   return (
     <Table highlightOnHover>
       <TableThead>
@@ -20,12 +31,12 @@ export const ResourceTable = ({ type, data, isTiny }: ResourceTableProps) => {
           <Table.Th ta="start" p={0}>
             {t("widget.healthMonitoring.cluster.table.header.name")}
           </Table.Th>
-          {type !== "storage" ? (
+          {type !== "storage" && hasCpuMetrics ? (
             <Table.Th ta="start" p={0}>
               {t("widget.healthMonitoring.cluster.table.header.cpu")}
             </Table.Th>
           ) : null}
-          {type !== "storage" ? (
+          {type !== "storage" && hasMemoryMetrics ? (
             <Table.Th ta="start" p={0}>
               {t("widget.healthMonitoring.cluster.table.header.memory")}
             </Table.Th>
@@ -61,10 +72,14 @@ export const ResourceTable = ({ type, data, isTiny }: ResourceTableProps) => {
                       <td style={{ WebkitLineClamp: "1" }}>{item.node}</td>
                     ) : (
                       <>
-                        <td style={{ whiteSpace: "nowrap" }}>{(item.cpu.utilization * 100).toFixed(1)}%</td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          {(item.memory.total ? (item.memory.used / item.memory.total) * 100 : 0).toFixed(1)}%
-                        </td>
+                        {hasCpuMetrics && (
+                          <td style={{ whiteSpace: "nowrap" }}>{(item.cpu.utilization * 100).toFixed(1)}%</td>
+                        )}
+                        {hasMemoryMetrics && (
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            {(item.memory.total ? (item.memory.used / item.memory.total) * 100 : 0).toFixed(1)}%
+                          </td>
+                        )}
                       </>
                     )}
                   </TableTr>
