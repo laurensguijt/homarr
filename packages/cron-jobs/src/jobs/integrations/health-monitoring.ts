@@ -1,10 +1,10 @@
-import { EVERY_5_SECONDS } from "@homarr/cron-jobs-core/expressions";
+import { EVERY_2_SECONDS } from "@homarr/cron-jobs-core/expressions";
 import { clusterInfoRequestHandler, systemInfoRequestHandler } from "@homarr/request-handler/health-monitoring";
 import { createRequestIntegrationJobHandler } from "@homarr/request-handler/lib/cached-request-integration-job-handler";
 
 import { createCronJob } from "../../lib";
 
-export const healthMonitoringJob = createCronJob("healthMonitoring", EVERY_5_SECONDS).withCallback(
+export const healthMonitoringJob = createCronJob("healthMonitoring", EVERY_2_SECONDS).withCallback(
   createRequestIntegrationJobHandler(
     (integration, itemOptions: Record<string, never>) => {
       const { kind } = integration;

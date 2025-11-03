@@ -1,5 +1,6 @@
 import { checkCron } from "./validation";
 
+export const EVERY_2_SECONDS = checkCron("*/2 * * * * *") satisfies string;
 export const EVERY_5_SECONDS = checkCron("*/5 * * * * *") satisfies string;
 export const EVERY_30_SECONDS = checkCron("*/30 * * * * *") satisfies string;
 export const EVERY_MINUTE = checkCron("* * * * *") satisfies string;

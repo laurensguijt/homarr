@@ -40,19 +40,67 @@ interface UnraidSystemInfo {
       id: string;
       manufacturer: string;
       brand: string;
+      vendor?: string;
+      family?: string;
+      model?: string;
+      stepping?: number;
+      revision?: string;
+      voltage?: string;
       cores: number;
       threads: number;
+      processors?: number;
+      socket?: string;
       speed: number;
       speedmin: number;
       speedmax: number;
+      cache?: {
+        l1d?: number;
+        l1i?: number;
+        l2?: number;
+        l3?: number;
+      };
+      flags?: string[];
     };
     memory: {
       id: string;
       layout: Array<{
         id: string;
         size: number; // Memory size per stick in bytes
+        bank?: string;
         type: string;
+        clockSpeed?: number;
+        partNum?: string;
+        serialNum?: string;
         manufacturer: string;
+        formFactor?: string;
+      }>;
+    };
+    devices?: {
+      id: string;
+      network?: Array<{
+        id: string;
+        iface: string;
+        model?: string;
+        vendor?: string;
+        mac?: string;
+        virtual?: boolean;
+        speed?: string;
+        dhcp?: boolean;
+      }>;
+      gpu?: Array<{
+        id: string;
+        type?: string | null; // May be null for some GPU items
+        typeid: string;
+        blacklisted: boolean;
+        class: string;
+        productid: string;
+        vendorname?: string;
+      }> | null;
+      usb?: Array<{
+        id: string;
+        name: string;
+        bus?: string;
+        device?: string;
       }>;
     };
     os: {
@@ -144,9 +192,26 @@ interface UnraidGraphQLDockers {
     containers: Array<{
       id: string;
       names: string[];
+      image?: string;
+      imageId?: string;
+      command?: string;
+      created?: number;
       state: string;
       status: string;
       autoStart: boolean;
+      sizeRootFs?: number;
+      ports?: Array<{
+        ip?: string;
+        privatePort: number;
+        publicPort: number | null;
+        type: string;
+      }>;
+      labels?: Record<string, unknown>;
+      hostConfig?: {
+        networkMode?: string;
+      };
+      networkSettings?: Record<string, unknown>;
+      mounts?: Array<Record<string, unknown>>;
     }>;
   };
 }
@@ -203,6 +268,12 @@ interface UnraidArrayDiskDetail {
   fsFree: number | null; // Free space in KB (null for parity or unformatted)
   temp: number | null; // Temperature in Celsius
   isSpinning: boolean | null;
+  numReads: number | null; // I/O read count
+  numWrites: number | null; // I/O write count
+  numErrors: number | null; // Unrecoverable errors
+  color: string | null; // ArrayDiskFsColor enum (GREEN_ON, RED_ON, etc.)
+  warning: number | null; // Disk space warning threshold (%)
+  critical: number | null; // Disk space critical threshold (%)
 }
 
 interface UnraidParityCheckStatus {
@@ -238,6 +309,13 @@ interface UnraidArrayInfo {
     parities: UnraidArrayDiskDetail[];
     disks: UnraidArrayDiskDetail[];
     caches: UnraidArrayDiskDetail[];
+    capacity?: {
+      kilobytes?: {
+        total?: string;
+        used?: string;
+        free?: string;
+      };
+    };
   };
 }
 
@@ -250,9 +328,26 @@ interface UnraidVm {
 interface UnraidDocker {
   id: string;
   names: string[];
+  image?: string;
+  imageId?: string;
+  command?: string;
+  created?: number;
   state: string;
   status: string;
   autoStart: boolean;
+  sizeRootFs?: number;
+  ports?: Array<{
+    ip?: string;
+    privatePort: number;
+    publicPort: number | null;
+    type: string;
+  }>;
+  labels?: Record<string, unknown>;
+  hostConfig?: {
+    networkMode?: string;
+  };
+  networkSettings?: Record<string, unknown>;
+  mounts?: Array<Record<string, unknown>>;
 }
 
 interface UnraidServer {
@@ -266,6 +361,20 @@ interface UnraidServer {
     localurl: string;
     remoteurl: string;
   };
+}
+
+interface UnraidShare {
+  id: string;
+  name: string | null;
+  free: number | null; // KB
+  used: number | null; // KB
+  size: number | null; // KB
+  cache: boolean | null;
+  comment: string | null;
+}
+
+interface UnraidSharesInfo {
+  shares: UnraidShare[];
 }
 
 @HandleIntegrationErrors([new UnraidApiErrorHandler()])
@@ -324,7 +433,7 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
   }
 
   public async getClusterInfoAsync(): Promise<ClusterHealthMonitoring> {
-    const [systemInfo, arrayInfo, vms, dockers, metrics, serverInfo, networkInfo, upsInfo, parityInfo, registrationInfo] = await Promise.all([
+    const [systemInfo, arrayInfo, vms, dockers, metrics, serverInfo, networkInfo, upsInfo, parityInfo, registrationInfo, sharesInfo] = await Promise.all([
       this.getSystemInfoAsync(),
       this.getArrayInfoAsync(),
       this.getVmsAsync(),
@@ -335,6 +444,7 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
       this.getUpsInfoAsync(),
       this.getParityStatusAsync(),
       this.getRegistrationAsync(),
+      this.getSharesAsync(),
     ]);
 
     // Calculate total memory from baseboard or sum of memory sticks
@@ -436,9 +546,12 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
       status: string;
       date: string | null;
       duration: number | null;
+      speed: string | null;
       errors: number | null;
       running: boolean | null;
       progress: number | null;
+      correcting: boolean | null;
+      paused: boolean | null;
     } | null = null;
     
     if (parityInfo) {
@@ -449,9 +562,12 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
           status: parity.status,
           date: parity.date,
           duration: parity.duration,
+          speed: parity.speed,
           errors: parity.errors,
-          running: parity.running,
+          running: parity.running === true, // Convert null to false
           progress: parity.progress,
+          correcting: parity.correcting === true, // Convert null to false
+          paused: parity.paused === true, // Convert null to false
         };
       } else {
         // If array exists but no parityCheckStatus, show as unavailable
@@ -460,9 +576,12 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
           status: "unknown",
           date: null,
           duration: null,
+          speed: null,
           errors: null,
           running: false,
           progress: null,
+          correcting: null,
+          paused: null,
         };
       }
     } else {
@@ -473,11 +592,28 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
         status: "unavailable",
         date: null,
         duration: null,
+        speed: null,
         errors: null,
         running: false,
         progress: null,
+        correcting: null,
+        paused: null,
       };
     }
+    
+    // Get swap memory info from metrics if available
+    const swapTotal = metrics?.metrics?.memory?.swapTotal ?? 0;
+    const swapUsed = metrics?.metrics?.memory?.swapUsed ?? 0;
+    const swapPercent = swapTotal > 0 ? (swapUsed / swapTotal) * 100 : 0;
+    
+    // Calculate cache pool usage (sum of all cache disks)
+    const cacheDisks = arrayInfo.caches || [];
+    const cacheTotalBytes = cacheDisks.reduce((sum, disk) => {
+      const diskSize = (disk.fsSize ?? disk.size) * 1024;
+      return sum + diskSize;
+    }, 0);
+    const cacheUsedBytes = cacheDisks.reduce((sum, disk) => sum + ((disk.fsUsed ?? 0) * 1024), 0);
+    const cachePoolPercent = cacheTotalBytes > 0 ? (cacheUsedBytes / cacheTotalBytes) * 100 : 0;
     
     // Store extra server info in status as JSON (temporary solution until we have a better way)
     // Uptime is already in node.uptime, so we don't need to include it here
@@ -491,6 +627,82 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
       storagePercent: totalStoragePercent,
       ups: formattedUpsInfo,
       parity: formattedParityInfo,
+      arrayState: arrayInfo.state, // Array state (STARTED, STOPPED, etc.)
+      cachePoolCount: arrayInfo.caches.length, // Number of cache disks
+      cachePoolPercent: cachePoolPercent, // Cache pool usage percentage
+      swap: swapTotal > 0 ? {
+        total: swapTotal,
+        used: swapUsed,
+        percent: swapPercent,
+      } : null,
+      shares: sharesInfo?.shares?.map((share) => {
+        // Calculate total size: if size is 0 or null, use used + free
+        const usedKB = share.used ?? 0;
+        const freeKB = share.free ?? 0;
+        const sizeKB = share.size && share.size > 0 ? share.size : (usedKB + freeKB);
+        
+        return {
+          id: share.id,
+          name: share.name,
+          used: usedKB * 1024, // Convert KB to bytes
+          total: sizeKB * 1024, // Convert KB to bytes
+          cache: share.cache ?? null, // May be missing from API response
+          comment: share.comment ?? null, // May be missing from API response
+        };
+      }) || [],
+      // Per-core CPU data
+      cpuCores: metrics?.metrics?.cpu?.cpus?.map((core) => ({
+        percentTotal: core.percentTotal,
+        percentUser: core.percentUser,
+        percentSystem: core.percentSystem,
+        percentIdle: core.percentIdle,
+      })) || [],
+      // CPU details
+      cpuDetails: {
+        vendor: systemInfo.info.cpu.vendor,
+        family: systemInfo.info.cpu.family,
+        model: systemInfo.info.cpu.model,
+        stepping: systemInfo.info.cpu.stepping,
+        processors: systemInfo.info.cpu.processors,
+        socket: systemInfo.info.cpu.socket,
+        cache: systemInfo.info.cpu.cache,
+        flagsCount: systemInfo.info.cpu.flags?.length || 0,
+      },
+      // Memory layout details
+      memoryLayout: systemInfo.info.memory?.layout?.map((stick) => ({
+        id: stick.id,
+        size: stick.size,
+        bank: stick.bank,
+        type: stick.type,
+        clockSpeed: stick.clockSpeed,
+        partNum: stick.partNum,
+        serialNum: stick.serialNum,
+        manufacturer: stick.manufacturer,
+        formFactor: stick.formFactor,
+      })) || [],
+      // USB devices
+      usbDevices: systemInfo.info.devices?.usb?.map((device) => ({
+        id: device.id,
+        name: device.name,
+        bus: device.bus,
+        device: device.device,
+      })) || [],
+      // Docker container details (extended)
+      dockerContainers: dockers.map((container) => ({
+        id: container.id,
+        names: container.names,
+        image: container.image,
+        state: container.state,
+        status: container.status,
+        autoStart: container.autoStart,
+        sizeRootFs: container.sizeRootFs,
+        networkMode: container.hostConfig?.networkMode,
+        ports: container.ports?.map((port) => ({
+          privatePort: port.privatePort,
+          publicPort: port.publicPort,
+          type: port.type,
+        })) || [],
+      })),
     });
     
     const node: NodeResource = {
@@ -588,17 +800,46 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
     // Include device and type info in the name for better identification
     const mapStorageDisk = (disk: UnraidArrayDiskDetail, prefix: string): StorageResource => {
       // Convert size from KB to bytes
-      const totalBytes = disk.size * 1024;
+      const totalBytes = (disk.size ?? 0) * 1024;
       // Use fsSize if available (actual filesystem size), otherwise use disk size
       // fsUsed is in KB, convert to bytes
-      const usedBytes = disk.fsUsed !== null && disk.fsUsed !== undefined ? disk.fsUsed * 1024 : 0;
-      const fsSizeBytes =
-        disk.fsSize !== null && disk.fsSize !== undefined ? disk.fsSize * 1024 : totalBytes;
+      // For cache disks, fsUsed might be null, so we calculate from fsSize and fsFree if available
+      let usedBytes = 0;
+      let fsSizeBytes = totalBytes;
+      
+      if (disk.fsUsed !== null && disk.fsUsed !== undefined && disk.fsUsed > 0) {
+        usedBytes = disk.fsUsed * 1024;
+        fsSizeBytes = (disk.fsSize ?? disk.fsUsed) * 1024;
+      } else if (disk.fsSize !== null && disk.fsSize !== undefined && disk.fsFree !== null && disk.fsFree !== undefined) {
+        // Calculate used from fsSize - fsFree (for cache pools)
+        fsSizeBytes = disk.fsSize * 1024;
+        usedBytes = (disk.fsSize - disk.fsFree) * 1024;
+      } else if (disk.fsSize !== null && disk.fsSize !== undefined) {
+        fsSizeBytes = disk.fsSize * 1024;
+      }
 
       // Build descriptive name: "parity (sdc)" or "disk1 (sdb)" or "cache (nvme1n1)"
       // Include temperature in status if available
       const tempInfo = disk.temp !== null && disk.temp !== undefined ? ` • ${disk.temp}°C` : "";
-      const displayName = `${disk.name} (${disk.device})`;
+      const displayName = disk.name ? `${disk.name}${disk.device ? ` (${disk.device})` : ""}` : (disk.device || "Unknown");
+
+      // Store extra disk metadata as JSON in status field (after the display status)
+      // Format: "DISPLAY_STATUS || JSON_METADATA"
+      // Only include non-null values to reduce JSON size
+      const extraMetadata: Record<string, unknown> = {};
+      if (disk.numReads !== null && disk.numReads !== undefined) extraMetadata.numReads = disk.numReads;
+      if (disk.numWrites !== null && disk.numWrites !== undefined) extraMetadata.numWrites = disk.numWrites;
+      if (disk.numErrors !== null && disk.numErrors !== undefined && disk.numErrors > 0) extraMetadata.numErrors = disk.numErrors;
+      if (disk.color !== null && disk.color !== undefined) extraMetadata.color = disk.color;
+      if (disk.isSpinning !== null && disk.isSpinning !== undefined) extraMetadata.isSpinning = disk.isSpinning;
+      if (disk.warning !== null && disk.warning !== undefined) extraMetadata.warning = disk.warning;
+      if (disk.critical !== null && disk.critical !== undefined) extraMetadata.critical = disk.critical;
+      if (disk.device) extraMetadata.device = disk.device;
+      if (disk.type) extraMetadata.type = disk.type;
+      
+      const metadataJson = Object.keys(extraMetadata).length > 0 ? JSON.stringify(extraMetadata) : "";
+      const displayStatus = `${disk.type || "DATA"} - ${disk.status || "UNKNOWN"}${tempInfo}`;
+      const fullStatus = metadataJson ? `${displayStatus} || ${metadataJson}` : displayStatus;
 
       return {
         type: "storage",
@@ -606,7 +847,7 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
         name: displayName,
         node: "unraid-node",
         isRunning: disk.status === "DISK_OK" || disk.status?.toLowerCase().includes("ok"),
-        status: `${disk.type} - ${disk.status}${tempInfo}`,
+        status: fullStatus,
         storagePlugin: "unraid",
         used: usedBytes,
         total: fsSizeBytes || totalBytes, // Use filesystem size if available, otherwise disk size
@@ -789,12 +1030,49 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
     }
   }
 
+  private async getSharesAsync(): Promise<UnraidSharesInfo | null> {
+    const query = `
+      query {
+        shares {
+          id
+          name
+          free
+          used
+          size
+          cache
+          comment
+        }
+      }
+    `;
+
+    try {
+      const response = await this.executeGraphQLQueryAsync<UnraidSharesInfo>(query);
+
+      if (!response.data?.shares) {
+        logger.warn("Failed to fetch shares info: no data returned");
+        return null;
+      }
+
+      return response.data;
+    } catch (error) {
+      logger.warn(`Failed to fetch shares info: ${error instanceof Error ? error.message : "Unknown error"}`);
+      return null;
+    }
+  }
+
   private async getArrayInfoAsync(): Promise<UnraidArrayInfo["array"]> {
     const query = `
       query {
         array {
           id
           state
+          capacity {
+            kilobytes {
+              total
+              used
+              free
+            }
+          }
           parities {
             id
             idx
@@ -808,6 +1086,12 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
             fsFree
             temp
             isSpinning
+            numReads
+            numWrites
+            numErrors
+            color
+            warning
+            critical
           }
           disks {
             id
@@ -822,6 +1106,12 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
             fsFree
             temp
             isSpinning
+            numReads
+            numWrites
+            numErrors
+            color
+            warning
+            critical
           }
           caches {
             id
@@ -836,6 +1126,13 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
             fsFree
             temp
             isSpinning
+            numReads
+            numWrites
+            numErrors
+            color
+            warning
+            critical
+            fsType
           }
         }
       }
@@ -954,19 +1251,54 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
             id
             manufacturer
             brand
+            vendor
+            family
+            model
+            stepping
+            revision
+            voltage
             cores
             threads
+            processors
+            socket
             speed
             speedmin
             speedmax
+            cache
+            flags
           }
           memory {
             id
             layout {
               id
               size
+              bank
               type
+              clockSpeed
+              partNum
+              serialNum
               manufacturer
+              formFactor
+            }
+          }
+          devices {
+            id
+            # Network interfaces query removed - API returns empty array, not useful
+            # GPU query removed - Some systems have GPU items with null values for non-nullable fields
+            # Since we don't use GPU information in the UI, we skip it to avoid GraphQL errors
+            # gpu {
+            #   id
+            #   typeid
+            #   blacklisted
+            #   class
+            #   productid
+            #   vendorname
+            # }
+            usb {
+              id
+              name
+              bus
+              device
             }
           }
           os {
@@ -1046,12 +1378,29 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
     const query = `
       query {
         docker {
-          containers {
+          containers(skipCache: false) {
             id
             names
+            image
+            imageId
+            command
+            created
             state
             status
             autoStart
+            sizeRootFs
+            ports {
+              ip
+              privatePort
+              publicPort
+              type
+            }
+            labels
+            hostConfig {
+              networkMode
+            }
+            networkSettings
+            mounts
           }
         }
       }
@@ -1065,7 +1414,24 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
         return [];
       }
 
-      return response.data.docker.containers;
+      // Map to UnraidDocker interface
+      return response.data.docker.containers.map((container) => ({
+        id: container.id,
+        names: container.names,
+        image: container.image,
+        imageId: container.imageId,
+        command: container.command,
+        created: container.created,
+        state: container.state,
+        status: container.status,
+        autoStart: container.autoStart,
+        sizeRootFs: container.sizeRootFs,
+        ports: container.ports,
+        labels: container.labels,
+        hostConfig: container.hostConfig,
+        networkSettings: container.networkSettings,
+        mounts: container.mounts,
+      }));
     } catch (error) {
       logger.warn(`Failed to fetch Docker containers: ${error instanceof Error ? error.message : "Unknown error"}`);
       return [];
@@ -1082,6 +1448,13 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
             percentTotal
             cpus {
               percentTotal
+              percentUser
+              percentSystem
+              percentNice
+              percentIdle
+              percentIrq
+              percentGuest
+              percentSteal
             }
           }
           memory {
@@ -1091,9 +1464,11 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
             available
             free
             buffcache
+            active
             percentTotal
             swapTotal
             swapUsed
+            swapFree
             percentSwapTotal
           }
         }

@@ -15,19 +15,19 @@ export const systemInfoRequestHandler = createCachedIntegrationRequestHandler<
     const integrationInstance = await createIntegrationAsync(integration);
     return await integrationInstance.getSystemInfoAsync();
   },
-  cacheDuration: dayjs.duration(5, "seconds"),
+  cacheDuration: dayjs.duration(2, "seconds"),
   queryKey: "systemInfo",
 });
 
 export const clusterInfoRequestHandler = createCachedIntegrationRequestHandler<
   ProxmoxClusterInfo,
-  "proxmox" | "mock",
+  "proxmox" | "unraid" | "mock",
   Record<string, never>
 >({
   async requestAsync(integration, _input) {
     const integrationInstance = await createIntegrationAsync(integration);
     return await integrationInstance.getClusterInfoAsync();
   },
-  cacheDuration: dayjs.duration(5, "seconds"),
+  cacheDuration: dayjs.duration(2, "seconds"),
   queryKey: "clusterInfo",
 });
