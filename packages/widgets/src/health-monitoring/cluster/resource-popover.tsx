@@ -54,7 +54,7 @@ export const ResourceTypeEntryDetails = ({ item }: { item: Resource }) => {
           <ResourceIcon type={item.type} size={35} />
           <Stack gap={0}>
             <Text fw={700} size="md">
-              {item.name}
+              {item.type === "lxc" && item.name?.startsWith("/") ? item.name.substring(1) : item.name}
             </Text>
             <Text c={item.isRunning ? "green" : "yellow"}>{capitalize(item.status)}</Text>
           </Stack>

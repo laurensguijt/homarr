@@ -662,7 +662,7 @@ export const UnraidHealthMonitoring = ({
                               />
                               <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
                                 <Text fw={500} size={isTiny ? "xs" : "sm"} lineClamp={1}>
-                                  {lxc.name}
+                                  {lxc.name?.startsWith("/") ? lxc.name.substring(1) : lxc.name}
                                 </Text>
                                 <Text size="xs" c="dimmed" lineClamp={1}>
                                   {lxc.status}

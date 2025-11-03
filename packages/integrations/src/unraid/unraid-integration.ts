@@ -382,7 +382,7 @@ export class UnraidIntegration extends Integration implements IClusterHealthMoni
     const serverName = serverInfo?.name || systemInfo.info.os.hostname || systemInfo.info.system?.model || `${systemInfo.info.cpu.brand || "Unraid"} Server`;
     
     // Get license type from registration API
-    const licenseType = registrationInfo?.registration?.type || "Unknown";
+    const licenseType = registrationInfo?.type || "Unknown";
     const unraidVersion = systemInfo.info.versions?.core?.unraid || "Unknown";
     
     // Get LAN IP from network access URLs (prefer LAN IPv4)
